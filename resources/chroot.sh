@@ -11,7 +11,7 @@ PS4='+\t '
 
 cp -ruv $rootfs/* /
 
-packages="udev systemd-sysv openssh-server iproute2 curl socat python3-minimal iperf3 iputils-ping fio kmod tmux hwloc-nox vim-tiny trace-cmd linuxptp"
+packages="udev systemd-sysv openssh-server iproute2 curl socat python3-minimal python3.10-venv python3-pip git apt-utils iperf3 iputils-ping fio kmod tmux hwloc-nox vim-tiny trace-cmd linuxptp"
 
 # msr-tools is only supported on x86-64.
 arch=$(uname -m)
@@ -45,6 +45,20 @@ done
 # Setup fcnet service. This is a custom Firecracker setup for assigning IPs
 # to the network interfaces in the guests spawned by the CI.
 ln -s /etc/systemd/system/fcnet.service /etc/systemd/system/sysinit.target.wants/fcnet.service
+
+# Create a venv
+mkdir -p /home/venv
+python3 -m venv /home/venv/cars_api
+
+# Create a cars API repo
+mkdir -p /home/projects
+git clone https://github.com/qxf2/cars-api.git /home/projects/cars-api
+source /home/venv/cars_api/bin/activate
+python -m pip install -r /home/projects/cars-api/requirements.txt
+deactivate
+
+# Setup Cars API service
+ln -s /etc/systemd/system/cars_api.service /etc/systemd/system/multi-user.target.wants/cars_api.service
 
 # Disable resolved and ntpd
 #
