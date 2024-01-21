@@ -5,12 +5,6 @@
 # fail if we encounter an error, uninitialized variable or a pipe breaks
 set -eu -o pipefail
 
-set -x
-PS4='+\t '
-
-cd $(dirname $0)
-ARCH=$(uname -m)
-OUTPUT_DIR=$PWD/$ARCH
 
 # Make sure we have all the needed tools
 function install_dependencies {
@@ -23,8 +17,8 @@ function dir2ext4img {
     # https://unix.stackexchange.com/questions/503211/how-can-an-image-file-be-created-for-a-directory
     local DIR=$1
     local IMG=$2
-    # Default size for the resulting rootfs image is 300M
-    local SIZE=${3:-300M}
+    # Default size for the resulting rootfs image is 300M, increaseing it to 400M
+    local SIZE=${3:-400M}
     local TMP_MNT=$(mktemp -d)
     truncate -s "$SIZE" "$IMG"
     mkfs.ext4 -F "$IMG"
@@ -198,27 +192,69 @@ function build_linux {
     popd &>/dev/null
 }
 
+function print_help {
+	cat    <<EOF
+	Usage:
+		h : Help
+		f : Build Ubuntu-22.04 filesystem
+		k <ver> : Build kernel of version <ver>, supports only 4.14, 5.10, 6.1 for now
+EOF
+}
+
 #### main ####
 
-install_dependencies
+echo "Running Prerequisite steps"
+set -x
+PS4='+\t '
+cd $(dirname $0)
+ARCH=$(uname -m)
+OUTPUT_DIR=$PWD/$ARCH
 
-BIN=overlay/usr/local/bin
-compile_and_install $BIN/init.c    $BIN/init
-compile_and_install $BIN/fillmem.c $BIN/fillmem
-compile_and_install $BIN/readmem.c $BIN/readmem
-if [ $ARCH == "aarch64" ]; then
-    compile_and_install $BIN/devmemread.c $BIN/devmemread
-fi
+while getopts :hfk: option;do
+	case $option in
+		h)
+			print_help;;
+		f)
+			echo "Building Filesystem"
+			install_dependencies
+			BIN=overlay/usr/local/bin
+			compile_and_install $BIN/init.c    $BIN/init
+			compile_and_install $BIN/fillmem.c $BIN/fillmem
+			compile_and_install $BIN/readmem.c $BIN/readmem
+			if [ $ARCH == "aarch64" ]; then
+			    compile_and_install $BIN/devmemread.c $BIN/devmemread
+			fi
 
-build_rootfs ubuntu-22.04 jammy
-build_initramfs
+			build_rootfs ubuntu-22.04 jammy
+			build_initramfs
+			tree -h $OUTPUT_DIR;;
+		k)
+			echo "Building kernel"
+			install_dependencies
+			case $OPTARG in
+				4.14)
+					build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-4.14.config;;
+				5.10)
+					build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-5.10.config
+					if [ $ARCH == "aarch64" ]; then
+					    build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-5.10-no-sve.config vmlinux-no-sve
+					fi
+					;;
+				6.1)
+					build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-6.1.config;;
+				?)
+					echo "This script only supports 4.14, 5.10 & 6.1 versions";;
+			esac
 
-build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-4.14.config
-build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-5.10.config
-build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-6.1.config
-
-if [ $ARCH == "aarch64" ]; then
-    build_linux $PWD/guest_configs/microvm-kernel-ci-$ARCH-5.10-no-sve.config vmlinux-no-sve
-fi
-
-tree -h $OUTPUT_DIR
+			tree -h $OUTPUT_DIR;;
+		:)
+			cat <<EOF
+			Option k requires a <ver> param
+			Usage:
+				-k <ver>, like -k 5.10
+EOF
+			;;
+		?)
+			print_help;;
+	esac
+done
