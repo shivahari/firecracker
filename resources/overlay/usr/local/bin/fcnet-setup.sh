@@ -20,6 +20,8 @@ main() {
         ip=$(printf "%d.%d.%d.%d" $(echo "0x${mac_ip}" | sed "s/:/ 0x/g"))
         ip addr add "$ip/30" dev $dev
         ip link set $dev up
+	ip route add default via 172.16.0.1 dev eth0
+	echo "nameserver 8.8.8.8" > /etc/resolv.conf
     done
 }
 main
